@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'no install — static placeholder'",
+  "buildCommand": "echo 'no build — Guardian Engine is a TS platform monorepo, not a static site'",
+  "outputDirectory": "public"
+}

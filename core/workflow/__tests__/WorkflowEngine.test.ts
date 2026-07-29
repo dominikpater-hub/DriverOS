@@ -475,4 +475,37 @@ describe("WorkflowEngine (integration)", () => {
       workflow.startWorkflow({ userId, defId: createWorkflowDefId("NOPE") })
     ).rejects.toThrow(/not found/i);
   });
+
+  // ==========================================================================
+  // EVIDENCE CONTEXT WIRING (ADR-008) — optional IncidentStore
+  // ==========================================================================
+
+  it("seals an immutable Evidence Incident when an IncidentStore is wired", async () => {
+    const { InMemoryIncidentStore } = await import("../../incident/InMemoryIncidentStore");
+    const store = new InMemoryIncidentStore();
+    const wired = new WorkflowEngine(workflowStorage as any, knowledge, context, decision, ai, store);
+
+    const def = buildTestWorkflow(true);
+    workflowStorage.seedDefinition(def);
+
+    const instance = await wired.startWorkflow({
+      userId,
+      defId: def.id,
+      location: { latitude: 52.52, longitude: 13.405 },
+      language: "de",
+    });
+
+    let current = await wired.getWorkflowInstance(instance.id);
+    while (current && current.state === WorkflowInstanceState.ACTIVE) {
+      await wired.executeStep(instance.id, { photo: "mock-photo-data" });
+      current = await wired.getWorkflowInstance(instance.id);
+    }
+    await wired.completeWorkflow(instance.id);
+
+    const incidents = store.list();
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0].origin).toBe("COMPLETED");
+    expect(incidents[0].country).toBe("DE");
+    expect(incidents[0].knowledgeUsed.length).toBeGreaterThan(0);
+  });
 });

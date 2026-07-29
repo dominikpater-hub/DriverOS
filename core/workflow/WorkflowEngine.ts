@@ -41,6 +41,13 @@ import {
   AIRequest
 } from "../index.ports";
 
+// Evidence Context (ADR-008): optional sink. When provided, completeWorkflow
+// also seals an immutable Incident into the Evidence store. Optional so the
+// existing 5-arg construction (tests, bootstrap) is unchanged.
+import type { IncidentStore } from "../incident/InMemoryIncidentStore";
+import { sealIncident } from "../incident/Incident";
+import type { DateTime } from "../../shared/platform/ids";
+
 // ============================================================================
 // INTERNAL ENTITIES
 // ============================================================================
@@ -149,7 +156,8 @@ export class WorkflowEngine implements IWorkflowPort {
     private knowledge: IKnowledgePort,
     private context: IContextPort,
     private decision: IDecisionPort,
-    private ai: IAIPort
+    private ai: IAIPort,
+    private incidentStore?: IncidentStore
   ) {
     this.registerDefaultExecutors();
   }
@@ -330,6 +338,26 @@ export class WorkflowEngine implements IWorkflowPort {
 
     instance.state = WorkflowInstanceState.COMPLETED;
     await this.storage.saveInstance(instance);
+
+    // ADR-008: seal an immutable Evidence Incident (when an Evidence store is wired).
+    if (this.incidentStore) {
+      const ku = incident.knowledgeUsed;
+      this.incidentStore.save(
+        sealIncident({
+          instanceId,
+          country: instance.contextSnapshot.resolvedCountry,
+          occurredAt: instance.createdAt.toISOString() as DateTime,
+          // completeWorkflow always finishes COMPLETED; an ABANDONED-sealing
+          // path (abandonWorkflow) is separate future work (ADR-008 invariant
+          // is already covered by the Evidence Context tests).
+          origin: "COMPLETED",
+          knowledgeUsed: ku.map((k) => k.versionId),
+          trustLevels: ku.map((k) => k.trustLevel),
+          attachments: incident.attachments.map((a) => ({ type: a.type, metadata: a.metadata })),
+          report: incident.report ?? null,
+        })
+      );
+    }
 
     return {
       id: incident.id,

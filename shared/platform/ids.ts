@@ -22,8 +22,8 @@ export type { SemVer } from "../types";
 export { SEMVER_PATTERN, isSemVer, asSemVer } from "../types";
 
 // ── Domain identifiers ───────────────────────────────────────────────────
-export type CountryCode = Branded<string, "CountryCode">; // ISO 3166-1 alpha-2
-export type LanguageCode = Branded<string, "LanguageCode">; // ISO 639-1
+// CountryCode/LanguageCode canonical in shared/types (union) — re-export (Faza 1).
+export type { CountryCode, LanguageCode } from "../types";
 
 export type KnowledgeId = Branded<string, "KnowledgeId">;
 export type VersionId = Branded<string, "VersionId">;

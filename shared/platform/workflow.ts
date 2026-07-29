@@ -20,7 +20,9 @@ import type { PredicateExpression } from "./predicate";
 import { StepKind } from "../types";
 export { StepKind };
 
-export type LocalizedText = Record<LanguageCode, string>;
+// Partial: a workflow step carries titles only for the languages it ships,
+// not all LanguageCode members (union now has 10). Faza 1 unification.
+export type LocalizedText = Partial<Record<LanguageCode, string>>;
 
 export enum WorkflowDomain {
   INSPECTION = "INSPECTION",

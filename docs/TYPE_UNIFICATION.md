@@ -57,3 +57,18 @@ Zamiast przepisywać wnętrze prawnie-krytycznego `WorkflowEngine` (najwyższe r
 Weryfikacja: `tsc` 0, **Jest 139/139**, `arch:check` 0, `bootstrap-local.ts` oba workflowy end-to-end.
 
 **Stan M1:** prymitywy 4/6 · 1.3 (workflow authoring) · 1.4 (rejestr executorów) — zrobione i zielone. Zostaje tylko domknięcie prymitywów CountryCode/LanguageCode/SituationContext (LanguageCode → `Partial<Record>` w `LocalizedText`) — cienka transza. Silnik natywnie na `WorkflowVersion` (bez formy runtime) = opcjonalne dalsze zacieśnienie (runtime jest już tylko wyjściem kompilatora).
+
+---
+
+## Domknięcie prymitywów — M1 KOMPLETNE (6/6)
+
+- [x] **CountryCode** — `shared/platform/ids` re-eksportuje union z `shared/types`.
+- [x] **LanguageCode** — jw.; `LocalizedText` zmienione na `Partial<Record<LanguageCode,string>>` (tytuły kroków niosą tylko języki, które shipują).
+- [x] **SituationContext / Connectivity / GeoPoint** — `shared/platform/context.ts` re-eksportuje z `shared/types` (koniec równoległej definicji). `DateTime` pozostaje typem platformowym (format wire), nie duplikatem.
+
+**shared/types = jedyne źródło prymitywów; shared/platform je re-eksportuje + trzyma unikalne agregaty (WorkflowVersion, PredicateExpression, AIRequest/Response, DecisionRecord, ProductManifest).**
+
+Weryfikacja końcowa M1: `tsc` 0 · **Jest 139/139** · `arch:check` 0 (50 modułów) · `bootstrap-local.ts` oba workflowy end-to-end.
+
+### Stan M1 = zrobione
+prymitywy 6/6 · 1.3 (workflow authoring = WorkflowVersion + kompilator) · 1.4 (rejestr executorów, koniec switch). Opcjonalne dalsze zacieśnienie: silnik natywnie na `WorkflowVersion` bez formy runtime — dziś runtime to wyłącznie wyjście kompilatora, nie drugi autorski kształt, więc nie ma już duplikacji autorstwa. Następny milestone: M2 (Faza 2 — executory na portach, DecisionRecord, Evidence Context, EmergencyCard→Knowledge).

@@ -24,7 +24,8 @@
   "include": [
     "core/**/*.ts",
     "shared/**/*.ts",
-    "apps/**/*.ts"
+    "apps/**/*.ts",
+    "packages/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -11,6 +11,7 @@ import DriverOS, { TrustBadge } from "./DriverOS.jsx";
 import AdrTrainer, { ALL, MODULES, countDueReviews } from "./adr-trainer.stub.jsx";
 import { C } from "./theme.js";
 import KnowledgeQA from "./KnowledgeQA.jsx";
+import AssistEngine from "./AssistEngine.jsx";
 
 export default function App() {
   const [route, setRoute] = useState({ screen: "dashboard" }); // dashboard | assist | training | qa
@@ -39,10 +40,14 @@ export default function App() {
                      onOpenQA={() => setRoute({ screen: "qa" })}
                      onExit={goDash} />;
 
+  if (route.screen === "assist-engine")
+    return <AssistEngine onExit={goDash} />;
+
   // KORZEŃ: Dashboard
   return (
     <Dashboard C={C} dueReviews={dueReviews}
       onOpenApp={openApp}
-      onOpenAssist={() => setRoute({ screen: "assist" })} />
+      onOpenAssist={() => setRoute({ screen: "assist" })}
+      onOpenAssistEngine={() => setRoute({ screen: "assist-engine" })} />
   );
 }

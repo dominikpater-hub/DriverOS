@@ -151,10 +151,12 @@ Stan: `tsc` 0 · **Jest 154/154** · `arch:check` 0 · bootstrap oba workflowy. 
 ## Postęp M5 (ta sesja)
 
 - [x] **5.0 Franek w monorepo jako build** — prototyp React (asystent w trasie) wciągnięty jako workspace `@guardian-engine/driver-os-ui` (`apps/driver-os/ui`, Vite + React 19), build zielony (`vite build` → `dist/`, 36 modułów). Powłoka: `App` (router OS), `Dashboard` („Dzisiaj"), `DriverOS` (Franek: kontrola/wypadek, `TrustBadge`), `KnowledgeQA` („Zapytaj"). Motyw `C` wyjęty do `theme.js`. **Szew ADR:** trener (osobna sesja) zastąpiony `adr-trainer.stub.jsx` z dokładną powierzchnią, jakiej importuje powłoka (`default, ALL, MODULES, countDueReviews`) — podmiana jednego pliku wpina realny trener. Workspaces: dodany glob `apps/*/ui`.
-- [ ] **5.1 hooki UI ↔ `IWorkflowPort`** (`useWorkflow`, `useOffline`) — następne.
-- [ ] **5.2 wygaszenie silników w JSX** (`engine/` → `core/` przez port); wtedy `arch:check` egzekwuje „ui importuje tylko Workflow + shared".
+- [x] **5.1 hooki UI ↔ `IWorkflowPort`** — **composition root** `packages/driver-os-runtime` (`createDriverOSRuntime()`) wiąże 5 silników + seeduje wiedzę/reguły DE i zwraca złożony `IWorkflowPort` + katalog. Żyje POZA `apps/` (dlatego wolno mu importować wszystkie silniki; app importuje tylko ten pakiet → bramka `apps-only-import-workflow-and-shared` trzyma). Hook `useWorkflow`/`useRuntime` (`src/platform/`) — czysto renderowalny stan (start/step/complete). Ekran `AssistEngine.jsx` prowadzi Inspection_DE/ADR_Check_DE na REALNYM silniku (drabina zaufania z `TrustLevel` → `TrustBadge`), obok prototypu. AI provider = mock (browser-safe, bez node-deps; realny za proxy w M4 wpina się w tym seamie). **Dowód:** `vite build` 59 modułów (rdzeń w bundlu, 93 kB gzip) + smoke node przez port: EMERGENCY_CARD → SHOW_KNOWLEDGE(T1) → TRANSLATE(T4 fallback) → CAPTURE_PHOTO → GENERATE_REPORT → Incident (knowledgeUsed=2). `packages/**` dołączone do `type-check`.
+- [ ] **5.2 wygaszenie silników w JSX** (prototypowe `engine/aiEngine.js`, `engine/retrieval.js` + wewn. logika `DriverOS.jsx`/`KnowledgeQA.jsx` → `core/` przez port); wtedy prototypowy ekran assist znika na rzecz `AssistEngine`.
 - [ ] **5.3 Franek jako warstwa persony** nad workflowami; czat przez AI Engine (grounding, T3/T4).
 - [ ] **5.4 `TrustLevelBadge`/`WorkflowUI` na realnym stanie**.
 - [ ] **5.5 backlog „uwagi do UI/Franka"** (czeka na plik od użytkownika; inaczej uwagi z sesji 1).
 
-Uwaga: M5.0 NIE konsumuje jeszcze `core/` (ekrany dalej mają własne silniki w JSX — `engine/aiEngine.js`, `engine/retrieval.js`); to jest treść M5.1–5.2. `verify` po M5.0: `tsc` 0 · **Jest 154/154** · `arch:check` 0 (68 modułów, +ui, 0 naruszeń).
+Uwaga: M5.0 NIE konsumowało jeszcze `core/`. **M5.1 domyka seam:** UI potrafi prowadzić realny silnik (ekran `AssistEngine`), a granica architektury trzyma (UI → pakiet runtime → core; nie UI → core). Prototypowe silniki w JSX żyją jeszcze obok — ich wygaszenie to M5.2.
+
+Stan po M5.1: `tsc` 0 (z `packages/`) · **Jest 154/154** · `arch:check` 0 (71 modułów, UI sięga core tylko tranzytywnie przez pakiet runtime — 0 naruszeń) · `vite build` 59 modułów · smoke silnika przez port OK.

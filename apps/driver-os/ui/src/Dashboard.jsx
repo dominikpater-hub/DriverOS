@@ -20,7 +20,7 @@ const DEMO_DAY = {
 
 const fmtHM = (min) => `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}min`;
 
-export default function Dashboard({ C, dueReviews, onOpenApp, onOpenAssist }) {
+export default function Dashboard({ C, dueReviews, onOpenApp, onOpenAssist, onOpenAssistEngine }) {
   const d = { ...DEMO_DAY, dueReviews };
   const drivePct = Math.min(100, Math.round((d.driveMinutes / d.driveLimit) * 100));
 
@@ -91,6 +91,14 @@ export default function Dashboard({ C, dueReviews, onOpenApp, onOpenAssist }) {
         <button onClick={onOpenAssist} style={{ ...bigBtn, background: C.red, color: "#fff", marginTop: 2 }}>
           🚨 Zdarzenie w trasie — kontrola / wypadek
         </button>
+
+        {/* M5.1: ta sama asysta prowadzona przez REALNY silnik Guardian (core),
+            obok prototypu. W M5.2 zastępuje wariant prototypowy. */}
+        {onOpenAssistEngine && (
+          <button onClick={onOpenAssistEngine} style={{ ...bigBtn, background: C.card, color: C.text, border: `1px solid ${C.edge}`, fontWeight: 700, padding: "14px 24px" }}>
+            ⚙️ Asysta na silniku (core) — podgląd
+          </button>
+        )}
       </div>
 
       <div style={{ padding: "10px 20px 16px", textAlign: "center", fontSize: 10, color: C.faint, fontFamily: C.mono }}>

@@ -47,3 +47,13 @@ Zamiast przepisywać wnętrze prawnie-krytycznego `WorkflowEngine` (najwyższe r
 - Weryfikacja: `tsc` 0, **Jest 132/132**, `arch:check` 0, `bootstrap-local.ts` przechodzi **oba** workflowy end-to-end (Incident z 3 wpisami wiedzy: emergency + rights + adr).
 
 **Pozostaje w M1:** 1.4 (wpięcie `StepExecutorRegistry` zamiast `switch(kind)` — wymaga executorów na portach, styka się z Fazą 2.1) oraz CountryCode/LanguageCode/SituationContext (LanguageCode wymaga `Partial<Record<>>` w `LocalizedText`). Silnik natywnie na `WorkflowVersion` (bez formy runtime) to opcjonalne dalsze zacieśnienie — dziś runtime jest już tylko wyjściem kompilatora, nie drugim autorskim kształtem.
+
+---
+
+## 1.4 — wykonane (rejestr executorów zamiast switch)
+
+`WorkflowEngine.executeStep` nie ma już `switch(stepDef.kind)` — dispatch przez prywatny rejestr `Map<StepKind, StepExecutorFn>` inicjowany w konstruktorze (`registerDefaultExecutors`). Dodano publiczne `registerExecutor(kind, fn)` (rzuca na duplikat) — nowy StepKind = rejestracja executora, **nigdy edycja `executeStep`** (fix OCP §8.3). Executory (port-bound) pozostały bez zmian → zero regresji.
+
+Weryfikacja: `tsc` 0, **Jest 139/139**, `arch:check` 0, `bootstrap-local.ts` oba workflowy end-to-end.
+
+**Stan M1:** prymitywy 4/6 · 1.3 (workflow authoring) · 1.4 (rejestr executorów) — zrobione i zielone. Zostaje tylko domknięcie prymitywów CountryCode/LanguageCode/SituationContext (LanguageCode → `Partial<Record>` w `LocalizedText`) — cienka transza. Silnik natywnie na `WorkflowVersion` (bez formy runtime) = opcjonalne dalsze zacieśnienie (runtime jest już tylko wyjściem kompilatora).

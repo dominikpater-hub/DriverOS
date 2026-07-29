@@ -132,14 +132,45 @@ interface IWorkflowStorage {
 // WORKFLOW ENGINE
 // ============================================================================
 
+type StepExecutorFn = (
+  stepDef: StepDefinition,
+  instance: WorkflowInstance,
+  knowledgeUsed: Array<{ versionId: VersionId; trustLevel: TrustLevel }>,
+  stepInput?: Record<string, unknown>
+) => Promise<StepExecutionResult>;
+
 export class WorkflowEngine implements IWorkflowPort {
+  // §8.3 OCP fix: dispatch by registry, not switch(kind). Adding a StepKind
+  // means registering an executor (registerExecutor) — never editing executeStep.
+  private readonly executors = new Map<StepKind, StepExecutorFn>();
+
   constructor(
     private storage: IWorkflowStorage,
     private knowledge: IKnowledgePort,
     private context: IContextPort,
     private decision: IDecisionPort,
     private ai: IAIPort
-  ) {}
+  ) {
+    this.registerDefaultExecutors();
+  }
+
+  /** Register (or override) an executor for a StepKind. Throws on duplicate. */
+  registerExecutor(kind: StepKind, fn: StepExecutorFn): void {
+    if (this.executors.has(kind)) {
+      throw new Error(`StepExecutor for kind "${kind}" is already registered`);
+    }
+    this.executors.set(kind, fn);
+  }
+
+  private registerDefaultExecutors(): void {
+    this.executors.set(StepKind.SHOW_KNOWLEDGE, (s, i, k) => this.executeShowKnowledge(s, i, k));
+    this.executors.set(StepKind.COLLECT_INPUT, (s, i, _k, inp) => this.executeCollectInput(s, i, inp));
+    this.executors.set(StepKind.AI_ASSIST, (s, i, k, inp) => this.executeAIAssist(s, i, k, inp));
+    this.executors.set(StepKind.EMERGENCY_CARD, (s, i, k) => this.executeEmergencyCard(s, i, k));
+    this.executors.set(StepKind.CAPTURE_PHOTO, (s, i, _k, inp) => this.executeCapturePhoto(s, i, inp));
+    this.executors.set(StepKind.TRANSLATE, (s, i, k, inp) => this.executeTranslate(s, i, k, inp));
+    this.executors.set(StepKind.GENERATE_REPORT, (s, i) => this.executeGenerateReport(s, i));
+  }
 
   /**
    * Start new workflow
@@ -205,39 +236,15 @@ export class WorkflowEngine implements IWorkflowPort {
     const knowledgeUsedInStep: Array<{ versionId: VersionId; trustLevel: TrustLevel }> = [];
 
     try {
-      // Execute based on step kind
-      switch (stepDef.kind) {
-        case StepKind.SHOW_KNOWLEDGE:
-          result = await this.executeShowKnowledge(stepDef, instance, knowledgeUsedInStep);
-          break;
-
-        case StepKind.COLLECT_INPUT:
-          result = await this.executeCollectInput(stepDef, instance, stepInput);
-          break;
-
-        case StepKind.AI_ASSIST:
-          result = await this.executeAIAssist(stepDef, instance, knowledgeUsedInStep, stepInput);
-          break;
-
-        case StepKind.EMERGENCY_CARD:
-          result = await this.executeEmergencyCard(stepDef, instance, knowledgeUsedInStep);
-          break;
-
-        case StepKind.CAPTURE_PHOTO:
-          result = await this.executeCapturePhoto(stepDef, instance, stepInput);
-          break;
-
-        case StepKind.TRANSLATE:
-          result = await this.executeTranslate(stepDef, instance, knowledgeUsedInStep, stepInput);
-          break;
-
-        case StepKind.GENERATE_REPORT:
-          result = await this.executeGenerateReport(stepDef, instance);
-          break;
-
-        default:
-          throw new Error(`Step kind "${stepDef.kind}" has no executor implemented yet`);
+      // §8.3 OCP: dispatch via the executor registry, not a switch(kind).
+      const exec = this.executors.get(stepDef.kind);
+      if (!exec) {
+        throw new Error(
+          `Step kind "${stepDef.kind}" has no executor registered. ` +
+          `Register one via registerExecutor() — do not add a case here.`
+        );
       }
+      result = await exec(stepDef, instance, knowledgeUsedInStep, stepInput);
     } catch (error) {
       // Offline First (Handbook): if this step's executor fails — network
       // down, provider error, whatever — and a fallback is declared, take

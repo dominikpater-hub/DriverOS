@@ -132,3 +132,16 @@ Bramka `npm run verify` po każdej pozycji · granice = build (dependency-cruise
 
 ## 8. Najbliższy krok proponowany
 **M2.1–2.3** (dokończenie executorów → DecisionRecord+replay → Evidence Context), bo to odblokowuje M5 (Franek dostaje realny, renderowalny stan + dowodowość). Równolegle mogę zacząć **M5.0** (wciągnięcie prototypu Franka do monorepo jako build), żeby UI od razu żyło obok `core/`.
+
+---
+
+## Postęp M2 (ta sesja)
+
+- [x] **2.2 DecisionRecord + audyt replay** (ADR-007) — append-only log, rekord po każdym matchRules (też T4), replay deterministyczny.
+- [x] **2.3 Evidence Context** `core/incident/` (ADR-008) — niemutowalny Incident, ABANDONED też seala, link do DecisionRecordów, anonimizacja; wpięty opcjonalnie w `WorkflowEngine.completeWorkflow`.
+- [x] **2.1 (część) — guarded transitions + DECISION_POINT** — deterministyczne routowanie warunkowe (`evaluatePredicate`), kompilator niesie transitions do runtime; liniowe workflowy bez zmian; test rozgałęzienia.
+- [ ] **2.4 EmergencyCard → Knowledge (D-02)** — refaktor `KnowledgeEngine` (ryzyko), osobna transza.
+- [ ] **2.5 pełna analiza nakładania reguł** — osobna transza.
+- [ ] **2.1 reszta** — executor OCR + `CapabilityProbe` przed krokiem.
+
+Stan: `tsc` 0 · **Jest 150/150** · `arch:check` 0 · bootstrap oba workflowy. Na GitHubie (`main`).

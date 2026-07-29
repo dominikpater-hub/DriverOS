@@ -42,6 +42,13 @@ function compileStep(step: PlatformStep): RuntimeStep {
     requires: step.requiredCapabilities,
     fallback,
     next: defaultNext(step),
+    // Carry guarded transitions to runtime (2.1) — linear steps have one
+    // default (guard=null) transition, so behaviour is unchanged.
+    transitions: step.transitions.map((t) => ({
+      to: t.to === "END" ? ("END" as const) : (t.to as unknown as StepId),
+      guard: t.guard,
+      priority: t.priority,
+    })),
     data: step.knowledgeRef ? { knowledgeTags: [step.knowledgeRef] } : undefined,
   };
 }

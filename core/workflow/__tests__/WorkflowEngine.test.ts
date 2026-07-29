@@ -480,6 +480,61 @@ describe("WorkflowEngine (integration)", () => {
   // EVIDENCE CONTEXT WIRING (ADR-008) — optional IncidentStore
   // ==========================================================================
 
+  it("DECISION_POINT branches deterministically via guarded transitions", async () => {
+    const branchDef: WorkflowDefinition = {
+      id: createWorkflowDefId("Branch_TEST"),
+      name: "Branch",
+      version: "1.0.0",
+      offlineCapable: true,
+      entryStepId: createStepId("decide"),
+      steps: [
+        {
+          id: createStepId("decide"),
+          kind: StepKind.DECISION_POINT,
+          title: "Wezwać policję?",
+          requires: [],
+          transitions: [
+            { to: createStepId("step_police"), guard: { path: "input.callPolice", operator: "eq", value: true }, priority: 10 },
+            { to: createStepId("step_statement"), guard: null, priority: 0 },
+          ],
+        },
+        {
+          id: createStepId("step_police"),
+          kind: StepKind.GENERATE_REPORT,
+          title: "Policja",
+          requires: [],
+          transitions: [{ to: "END", guard: null, priority: 0 }],
+        },
+        {
+          id: createStepId("step_statement"),
+          kind: StepKind.GENERATE_REPORT,
+          title: "Oświadczenie",
+          requires: [],
+          transitions: [{ to: "END", guard: null, priority: 0 }],
+        },
+      ],
+    };
+    workflowStorage.seedDefinition(branchDef);
+
+    const yes = await workflow.startWorkflow({
+      userId,
+      defId: branchDef.id,
+      location: { latitude: 52.52, longitude: 13.405 },
+      language: "de",
+    });
+    await workflow.executeStep(yes.id, { callPolice: true });
+    expect((await workflow.getWorkflowInstance(yes.id))?.currentStepId).toBe(createStepId("step_police"));
+
+    const no = await workflow.startWorkflow({
+      userId,
+      defId: branchDef.id,
+      location: { latitude: 52.52, longitude: 13.405 },
+      language: "de",
+    });
+    await workflow.executeStep(no.id, { callPolice: false });
+    expect((await workflow.getWorkflowInstance(no.id))?.currentStepId).toBe(createStepId("step_statement"));
+  });
+
   it("seals an immutable Evidence Incident when an IncidentStore is wired", async () => {
     const { InMemoryIncidentStore } = await import("../../incident/InMemoryIncidentStore");
     const store = new InMemoryIncidentStore();

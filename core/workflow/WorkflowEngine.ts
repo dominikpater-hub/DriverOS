@@ -48,6 +48,12 @@ import type { IncidentStore } from "../incident/InMemoryIncidentStore";
 import { sealIncident } from "../incident/Incident";
 import type { DateTime } from "../../shared/platform/ids";
 
+// Guarded transitions (2.1): deterministic conditional routing between steps,
+// shared operator set with Decision Engine (PredicateExpression, D-03).
+import type { PredicateExpression } from "../../shared/platform/predicate";
+import { evaluatePredicate } from "../../shared/platform/predicate";
+import type { JsonValue } from "../../shared/platform/ids";
+
 // ============================================================================
 // INTERNAL ENTITIES
 // ============================================================================
@@ -68,6 +74,12 @@ export interface WorkflowDefinition {
 /**
  * StepDefinition — single unit of work in workflow
  */
+export interface RuntimeTransition {
+  to: StepId | "END";
+  guard: PredicateExpression | null; // null = default (unconditional) transition
+  priority: number;
+}
+
 export interface StepDefinition {
   id: StepId;
   kind: StepKind;
@@ -75,7 +87,10 @@ export interface StepDefinition {
   description?: string;
   requires: Capability[];
   fallback?: StepId;
-  next?: StepId | StepId[]; // Linear or branching
+  next?: StepId | StepId[]; // Linear fallback when no `transitions` present
+  /** Deterministic guarded transitions (preferred). Linear workflows have one
+   *  default transition (guard=null) — identical behaviour to `next`. */
+  transitions?: RuntimeTransition[];
   data?: Record<string, unknown>;
 }
 
@@ -178,6 +193,51 @@ export class WorkflowEngine implements IWorkflowPort {
     this.executors.set(StepKind.CAPTURE_PHOTO, (s, i, _k, inp) => this.executeCapturePhoto(s, i, inp));
     this.executors.set(StepKind.TRANSLATE, (s, i, k, inp) => this.executeTranslate(s, i, k, inp));
     this.executors.set(StepKind.GENERATE_REPORT, (s, i) => this.executeGenerateReport(s, i));
+    this.executors.set(StepKind.DECISION_POINT, (s, i, _k, inp) => this.executeDecisionPoint(s, i, inp));
+  }
+
+  /**
+   * Deterministic guarded routing. Highest-priority matching guard wins;
+   * otherwise the default transition (guard=null). Same operator set as the
+   * Decision Engine (evaluatePredicate) — no AI in the decision.
+   */
+  private pickTransition(
+    transitions: RuntimeTransition[],
+    instance: WorkflowInstance,
+    stepInput?: Record<string, unknown>
+  ): StepId | "END" {
+    const subject: Record<string, JsonValue> = {
+      input: (stepInput ?? {}) as unknown as JsonValue,
+      context: {
+        connectivity: instance.contextSnapshot.connectivity,
+        country: instance.contextSnapshot.resolvedCountry,
+        language: instance.contextSnapshot.language,
+      } as unknown as JsonValue,
+      variables: (instance.data ?? {}) as unknown as JsonValue,
+    };
+    const guarded = transitions.filter((t) => t.guard !== null).sort((a, b) => b.priority - a.priority);
+    for (const t of guarded) {
+      if (evaluatePredicate(t.guard as PredicateExpression, subject)) return t.to;
+    }
+    const def = transitions.find((t) => t.guard === null);
+    return def ? def.to : "END";
+  }
+
+  /**
+   * DECISION_POINT: records the decision inputs; the branch itself is taken by
+   * guarded transitions (pickTransition), keeping the decision deterministic.
+   */
+  private async executeDecisionPoint(
+    stepDef: StepDefinition,
+    instance: WorkflowInstance,
+    stepInput?: Record<string, unknown>
+  ): Promise<StepExecutionResult> {
+    if (stepInput) instance.data = { ...instance.data, ...stepInput };
+    return {
+      stepId: stepDef.id,
+      kind: stepDef.kind,
+      uiPrompt: { title: stepDef.title, content: stepDef.description || "" },
+    };
   }
 
   /**
@@ -284,9 +344,14 @@ export class WorkflowEngine implements IWorkflowPort {
     };
     instance.history.push(record);
 
-    // Move to next step
+    // Move to next step. Precedence: explicit fallback (error path) → guarded
+    // transitions (deterministic) → linear `next` → complete.
     if (result.nextStepId) {
       instance.currentStepId = result.nextStepId;
+    } else if (stepDef.transitions && stepDef.transitions.length > 0) {
+      const to = this.pickTransition(stepDef.transitions, instance, stepInput);
+      if (to === "END") instance.state = WorkflowInstanceState.COMPLETED;
+      else instance.currentStepId = to;
     } else if (stepDef.next) {
       instance.currentStepId = Array.isArray(stepDef.next) ? stepDef.next[0] : stepDef.next;
     } else {

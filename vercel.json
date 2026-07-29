@@ -1,7 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "echo 'no install — static placeholder'",
-  "buildCommand": "echo 'no build — Guardian Engine is a TS platform monorepo, not a static site'",
-  "outputDirectory": "public"
+  "installCommand": "npm install",
+  "buildCommand": "npm run build --workspace @guardian-engine/driver-os-ui",
+  "outputDirectory": "apps/driver-os/ui/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

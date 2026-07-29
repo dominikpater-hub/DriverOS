@@ -140,8 +140,21 @@ Bramka `npm run verify` po każdej pozycji · granice = build (dependency-cruise
 - [x] **2.2 DecisionRecord + audyt replay** (ADR-007) — append-only log, rekord po każdym matchRules (też T4), replay deterministyczny.
 - [x] **2.3 Evidence Context** `core/incident/` (ADR-008) — niemutowalny Incident, ABANDONED też seala, link do DecisionRecordów, anonimizacja; wpięty opcjonalnie w `WorkflowEngine.completeWorkflow`.
 - [x] **2.1 (część) — guarded transitions + DECISION_POINT** — deterministyczne routowanie warunkowe (`evaluatePredicate`), kompilator niesie transitions do runtime; liniowe workflowy bez zmian; test rozgałęzienia.
+- [x] **2.1 (reszta) — executor OCR + `CapabilityProbe`** — OCR przez port AI (T3/T4, nigdy verified); probe deklarowanych capability przed krokiem (ADR-006), brak capability → deklarowany fallback (Offline First). Additive/opcjonalne. +4 testy.
 - [ ] **2.4 EmergencyCard → Knowledge (D-02)** — refaktor `KnowledgeEngine` (ryzyko), osobna transza.
 - [ ] **2.5 pełna analiza nakładania reguł** — osobna transza.
-- [ ] **2.1 reszta** — executor OCR + `CapabilityProbe` przed krokiem.
 
-Stan: `tsc` 0 · **Jest 150/150** · `arch:check` 0 · bootstrap oba workflowy. Na GitHubie (`main`).
+**M2.1 domknięte.** Każdy StepKind ma executor (SHOW_KNOWLEDGE, COLLECT_INPUT, AI_ASSIST, EMERGENCY_CARD, CAPTURE_PHOTO, TRANSLATE, OCR, GENERATE_REPORT, DECISION_POINT). NOTIFY/WAIT — świadomie bez executora (brak workflowa ich używającego; rzucą jasny błąd „register one"). Pozostaje 2.4 i 2.5 (osobne transze).
+
+Stan: `tsc` 0 · **Jest 154/154** · `arch:check` 0 · bootstrap oba workflowy. Na GitHubie (`main`, `ac273e5`).
+
+## Postęp M5 (ta sesja)
+
+- [x] **5.0 Franek w monorepo jako build** — prototyp React (asystent w trasie) wciągnięty jako workspace `@guardian-engine/driver-os-ui` (`apps/driver-os/ui`, Vite + React 19), build zielony (`vite build` → `dist/`, 36 modułów). Powłoka: `App` (router OS), `Dashboard` („Dzisiaj"), `DriverOS` (Franek: kontrola/wypadek, `TrustBadge`), `KnowledgeQA` („Zapytaj"). Motyw `C` wyjęty do `theme.js`. **Szew ADR:** trener (osobna sesja) zastąpiony `adr-trainer.stub.jsx` z dokładną powierzchnią, jakiej importuje powłoka (`default, ALL, MODULES, countDueReviews`) — podmiana jednego pliku wpina realny trener. Workspaces: dodany glob `apps/*/ui`.
+- [ ] **5.1 hooki UI ↔ `IWorkflowPort`** (`useWorkflow`, `useOffline`) — następne.
+- [ ] **5.2 wygaszenie silników w JSX** (`engine/` → `core/` przez port); wtedy `arch:check` egzekwuje „ui importuje tylko Workflow + shared".
+- [ ] **5.3 Franek jako warstwa persony** nad workflowami; czat przez AI Engine (grounding, T3/T4).
+- [ ] **5.4 `TrustLevelBadge`/`WorkflowUI` na realnym stanie**.
+- [ ] **5.5 backlog „uwagi do UI/Franka"** (czeka na plik od użytkownika; inaczej uwagi z sesji 1).
+
+Uwaga: M5.0 NIE konsumuje jeszcze `core/` (ekrany dalej mają własne silniki w JSX — `engine/aiEngine.js`, `engine/retrieval.js`); to jest treść M5.1–5.2. `verify` po M5.0: `tsc` 0 · **Jest 154/154** · `arch:check` 0 (68 modułów, +ui, 0 naruszeń).

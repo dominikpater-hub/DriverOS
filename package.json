@@ -1,0 +1,67 @@
+{
+  "name": "@guardian-engine/platform",
+  "version": "0.1.0",
+  "description": "Guardian Engine — Contextual Assistance Platform for Europe",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "watch": "tsc --build --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint . --ext .ts,.tsx",
+    "type-check": "tsc --noEmit",
+    "type-check:driver-os": "tsc --noEmit -p apps/driver-os/tsconfig.json",
+    "type-check:all": "npm run type-check && npm run type-check:driver-os",
+    "dev": "concurrently \"npm:watch\" \"npm:test:watch\"",
+    "engines:init": "ts-node scripts/initialize-engines.ts",
+    "knowledge:publish": "ts-node scripts/publish-knowledge.ts",
+    "rules:validate": "ts-node scripts/validate-rules.ts",
+    "offline:build": "ts-node scripts/build-offline-packages.ts",
+    "docs:generate": "ts-node scripts/generate-docs.ts",
+    "arch:check": "depcruise --config .dependency-cruiser.js --output-type err core shared apps",
+    "verify": "npm run type-check && npm test && npm run arch:check"
+  },
+  "keywords": [
+    "guardian",
+    "contextual-assistance",
+    "europe",
+    "workflow",
+    "knowledge-base",
+    "offline-first",
+    "decision-engine"
+  ],
+  "author": "Guardian Engine Team",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "concurrently": "^8.0.0",
+    "dependency-cruiser": "^17.4.3",
+    "eslint": "^8.0.0",
+    "jest": "^29.7.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "ts-jest": "^29.4.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

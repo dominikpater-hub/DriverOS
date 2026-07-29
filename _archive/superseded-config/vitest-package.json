@@ -1,0 +1,16 @@
+{
+  "name": "guardian-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "tsx scripts/bootstrap-decision.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0",
+    "tsx": "^4.16.0"
+  }
+}

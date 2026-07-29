@@ -1,0 +1,295 @@
+import React, { useState, useMemo } from "react";
+
+/* ============================================================
+   Guardian Engine — DriverOS clickable prototype
+   Engines live inside this file (in-memory), faithful to the
+   Domain Model: Decision -> Workflow -> Knowledge/Context/AI.
+   This is a prototype for clicking through, not production.
+   ============================================================ */
+
+const Trust = {
+  T1: { id: "T1", label: "Geprüft", sub: "Verified law", color: "#1B7F4B", bar: 4 },
+  T2: { id: "T2", label: "Prüfung fällig", sub: "Verified, stale", color: "#B58A00", bar: 3 },
+  T3: { id: "T3", label: "KI-Hinweis", sub: "AI-assisted", color: "#2563C9", bar: 2 },
+  T4: { id: "T4", label: "Notfall-Basis", sub: "Fallback", color: "#8A8F98", bar: 1 },
+};
+
+const KNOWLEDGE = {
+  "rights-de": {
+    versionId: "v1.2", trust: "T1",
+    summary: "Deine Rechte bei einer Verkehrskontrolle",
+    actions: [
+      "Bleib ruhig und im Fahrzeug sitzen.",
+      "Führerschein und Fahrzeugpapiere zeigen.",
+      "Du musst nur Angaben zur Person machen.",
+    ],
+    rights: ["Recht zu schweigen (außer Personalien)", "Recht auf einen Anwalt"],
+    warnings: ["Nicht wegfahren.", "Keine Dokumente fälschen."],
+    ref: "StVO §36",
+  },
+};
+
+const EMERGENCY_DE = {
+  trust: "T1",
+  contacts: [{ label: "Notruf", number: "112" }, { label: "Polizei", number: "110" }],
+  universal: ["Ruhe bewahren.", "Hände sichtbar am Lenkrad.", "Motor aus, Innenlicht an."],
+};
+
+const RULES = [
+  { priority: 100, when: { country: "DE", event: "ROAD_INSPECTION", vehicle: "TRUCK" }, workflow: "Inspection_DE" },
+  { priority: 90, when: { country: "DE", event: "ROAD_INSPECTION" }, workflow: "Inspection_DE" },
+];
+function matchRule(ctx) {
+  return RULES
+    .filter((r) => Object.entries(r.when).every(([k, v]) => ctx[k] === v))
+    .sort((a, b) => b.priority - a.priority)[0]?.workflow ?? null;
+}
+
+const INSPECTION_DE = {
+  id: "Inspection_DE", version: "1.0.0",
+  steps: [
+    { id: "emergency", kind: "EMERGENCY_CARD", title: "Deine Rechte — sofort" },
+    { id: "knowledge", kind: "SHOW_KNOWLEDGE", title: "Was du jetzt tun sollst", knowledgeId: "rights-de" },
+    { id: "translate", kind: "TRANSLATE", title: "Für den Beamten übersetzen", requiresNetwork: true },
+    { id: "photo", kind: "CAPTURE_PHOTO", title: "Beweis sichern" },
+    { id: "report", kind: "GENERATE_REPORT", title: "Bericht erstellen" },
+  ],
+};
+
+/* ---- Trust Ladder: the signature element ---- */
+function TrustBadge({ level }) {
+  const t = Trust[level];
+  if (!t) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 22 }}>
+        {[1, 2, 3, 4].map((n) => (
+          <div key={n} style={{
+            width: 6, height: 6 + n * 4, borderRadius: 1,
+            background: n <= t.bar ? t.color : "#2A2E37",
+          }} />
+        ))}
+      </div>
+      <div style={{ lineHeight: 1.1 }}>
+        <div style={{ color: t.color, fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>{t.label}</div>
+        <div style={{ color: "#6B7280", fontSize: 11, fontFamily: "ui-monospace, monospace" }}>{t.id} · {t.sub}</div>
+      </div>
+    </div>
+  );
+}
+
+const wrap = { maxWidth: 480, margin: "0 auto", minHeight: "100dvh", background: "#0E1117", color: "#E8EAED", fontFamily: "system-ui, -apple-system, sans-serif", display: "flex", flexDirection: "column" };
+const card = { background: "#171B22", border: "1px solid #232833", borderRadius: 16, padding: 20 };
+const bigBtn = { width: "100%", padding: "20px 24px", fontSize: 18, fontWeight: 700, border: "none", borderRadius: 14, cursor: "pointer", letterSpacing: "-0.01em" };
+
+export default function DriverOS() {
+  const [screen, setScreen] = useState("home"); // home | workflow | report
+  const [online, setOnline] = useState(true);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [knowledgeUsed, setKnowledgeUsed] = useState([]);
+  const [trustSeen, setTrustSeen] = useState([]);
+
+  const ctx = useMemo(() => ({
+    country: "DE", event: "ROAD_INSPECTION", vehicle: "TRUCK",
+    connectivity: online ? "ONLINE" : "OFFLINE", language: "de",
+  }), [online]);
+
+  const workflow = INSPECTION_DE;
+  const step = workflow.steps[stepIdx];
+
+  function startInspection() {
+    const wf = matchRule(ctx);
+    if (wf !== "Inspection_DE") return;
+    setStepIdx(0); setKnowledgeUsed([]); setTrustSeen([]); setScreen("workflow");
+  }
+
+  function resolveStep(s) {
+    if (s.kind === "EMERGENCY_CARD") return { trust: "T1" };
+    if (s.kind === "SHOW_KNOWLEDGE") return { trust: KNOWLEDGE[s.knowledgeId].trust, knowledge: KNOWLEDGE[s.knowledgeId] };
+    if (s.kind === "TRANSLATE") return s.requiresNetwork && !online ? { trust: "T4", fellBack: true } : { trust: "T3" };
+    return { trust: null };
+  }
+
+  function next() {
+    const r = resolveStep(step);
+    if (r.knowledge) setKnowledgeUsed((k) => [...new Set([...k, r.knowledge.versionId])]);
+    if (r.trust) setTrustSeen((t) => [...new Set([...t, r.trust])]);
+    if (stepIdx + 1 >= workflow.steps.length) setScreen("report");
+    else setStepIdx(stepIdx + 1);
+  }
+
+  /* ---------- HOME ---------- */
+  if (screen === "home") {
+    return (
+      <div style={wrap}>
+        <Header online={online} setOnline={setOnline} />
+        <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 13, color: "#6B7280", fontFamily: "ui-monospace, monospace", letterSpacing: "0.02em" }}>DE · LKW · Fahrer</div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, margin: "6px 0 0", letterSpacing: "-0.02em" }}>Was ist passiert?</h1>
+            <p style={{ color: "#9AA0AA", fontSize: 14, margin: "8px 0 0" }}>Ein Tipp. Kein Suchen. Guardian führt dich Schritt für Schritt.</p>
+          </div>
+          <button style={{ ...bigBtn, background: "#C1121F", color: "#fff", marginTop: 8 }} onClick={startInspection}>
+            🚨 Polizeikontrolle
+          </button>
+          <button style={{ ...bigBtn, background: "#171B22", color: "#5A6270", border: "1px solid #232833", cursor: "not-allowed" }} disabled>
+            Unfall · bald verfügbar
+          </button>
+          <button style={{ ...bigBtn, background: "#171B22", color: "#5A6270", border: "1px solid #232833", cursor: "not-allowed" }} disabled>
+            Panne · bald verfügbar
+          </button>
+        </div>
+        <Foot />
+      </div>
+    );
+  }
+
+  /* ---------- WORKFLOW ---------- */
+  if (screen === "workflow") {
+    const r = resolveStep(step);
+    const k = r.knowledge;
+    return (
+      <div style={wrap}>
+        <Header online={online} setOnline={setOnline} />
+        <div style={{ padding: "10px 20px", display: "flex", gap: 5 }}>
+          {workflow.steps.map((s, i) => (
+            <div key={s.id} style={{ flex: 1, height: 4, borderRadius: 2, background: i <= stepIdx ? "#C1121F" : "#232833" }} />
+          ))}
+        </div>
+        <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 12, color: "#6B7280", fontFamily: "ui-monospace, monospace" }}>
+              Schritt {stepIdx + 1}/{workflow.steps.length} · {step.kind}
+            </div>
+            {r.trust && <TrustBadge level={r.trust} />}
+          </div>
+          <h2 style={{ fontSize: 23, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>{step.title}</h2>
+
+          {step.kind === "EMERGENCY_CARD" && (
+            <div style={{ ...card, borderColor: "#1B7F4B33" }}>
+              <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                {EMERGENCY_DE.contacts.map((c) => (
+                  <a key={c.number} href={`tel:${c.number}`} style={{ flex: 1, textAlign: "center", padding: "14px 0", background: "#1B7F4B", color: "#fff", borderRadius: 12, textDecoration: "none", fontWeight: 700 }}>
+                    {c.label}<br /><span style={{ fontSize: 22 }}>{c.number}</span>
+                  </a>
+                ))}
+              </div>
+              {EMERGENCY_DE.universal.map((u, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", fontSize: 16 }}>
+                  <span style={{ color: "#1B7F4B" }}>✓</span>{u}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {step.kind === "SHOW_KNOWLEDGE" && k && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ ...card }}>
+                <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 10, fontFamily: "ui-monospace, monospace" }}>{k.ref} · {k.versionId}</div>
+                {k.actions.map((a, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, padding: "8px 0", fontSize: 16, alignItems: "baseline" }}>
+                    <span style={{ color: "#C1121F", fontWeight: 800, fontFamily: "ui-monospace, monospace" }}>{i + 1}</span>{a}
+                  </div>
+                ))}
+              </div>
+              <div style={{ ...card, background: "#12180F", borderColor: "#1B7F4B33" }}>
+                <div style={{ fontSize: 12, color: "#5FA777", marginBottom: 8, fontWeight: 700 }}>DEINE RECHTE</div>
+                {k.rights.map((x, i) => <div key={i} style={{ fontSize: 15, padding: "4px 0" }}>{x}</div>)}
+              </div>
+              <div style={{ ...card, background: "#1A1310", borderColor: "#C1121F33" }}>
+                <div style={{ fontSize: 12, color: "#D98880", marginBottom: 8, fontWeight: 700 }}>NICHT TUN</div>
+                {k.warnings.map((x, i) => <div key={i} style={{ fontSize: 15, padding: "4px 0" }}>{x}</div>)}
+              </div>
+            </div>
+          )}
+
+          {step.kind === "TRANSLATE" && (
+            <div style={{ ...card }}>
+              {r.fellBack ? (
+                <>
+                  <div style={{ color: "#8A8F98", fontSize: 13, marginBottom: 12, fontFamily: "ui-monospace, monospace" }}>OFFLINE — Paket-Sätze</div>
+                  <p style={{ fontSize: 17, margin: 0 }}>„Ich hole meine Papiere. Einen Moment, bitte."</p>
+                  <p style={{ fontSize: 14, color: "#6B7280", marginTop: 12 }}>Live-Übersetzung braucht Netz. Diese Sätze funktionieren offline.</p>
+                </>
+              ) : (
+                <>
+                  <div style={{ color: "#2563C9", fontSize: 13, marginBottom: 12, fontFamily: "ui-monospace, monospace" }}>KI-Übersetzung · live</div>
+                  <p style={{ fontSize: 17, margin: 0 }}>„Guten Tag. Ich bin Berufskraftfahrer. Hier sind meine Dokumente."</p>
+                  <p style={{ fontSize: 13, color: "#6B7280", marginTop: 12 }}>KI-Hinweis, keine Rechtsberatung.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {step.kind === "CAPTURE_PHOTO" && (
+            <div style={{ ...card, textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 44 }}>📷</div>
+              <p style={{ color: "#9AA0AA", fontSize: 15 }}>Foto der Dokumente sichern.<br />Wird im Bericht gespeichert.</p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: 20, borderTop: "1px solid #171B22" }}>
+          <button style={{ ...bigBtn, background: "#E8EAED", color: "#0E1117" }} onClick={next}>
+            {stepIdx + 1 >= workflow.steps.length ? "Bericht erstellen" : "Weiter"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- REPORT ---------- */
+  return (
+    <div style={wrap}>
+      <Header online={online} setOnline={setOnline} />
+      <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ fontSize: 44, textAlign: "center", marginTop: 12 }}>✓</div>
+        <h2 style={{ fontSize: 24, fontWeight: 800, textAlign: "center", margin: 0 }}>Vorfall dokumentiert</h2>
+        <div style={{ ...card }}>
+          <Row label="Workflow" value={`${workflow.id} · ${workflow.version}`} />
+          <Row label="Land" value="DE" />
+          <Row label="Verbindung" value={online ? "Online" : "Offline"} />
+          <Row label="Verwendete Rechtsstände" value={knowledgeUsed.join(", ") || "—"} />
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #232833" }}>
+            <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 10 }}>Vertrauensstufen in diesem Vorfall</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {trustSeen.map((t) => <span key={t} style={{ padding: "5px 10px", borderRadius: 8, background: Trust[t].color + "22", color: Trust[t].color, fontSize: 12, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>{t}</span>)}
+            </div>
+          </div>
+        </div>
+        <p style={{ fontSize: 13, color: "#6B7280", textAlign: "center", lineHeight: 1.5 }}>
+          Der Bericht nennt die genaue Rechtsversion, die dir gezeigt wurde — beweissicher für einen Einspruch.
+        </p>
+        <button style={{ ...bigBtn, background: "#171B22", color: "#E8EAED", border: "1px solid #232833" }} onClick={() => setScreen("home")}>
+          Zurück zum Start
+        </button>
+      </div>
+      <Foot />
+    </div>
+  );
+}
+
+function Header({ online, setOnline }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderBottom: "1px solid #171B22" }}>
+      <div style={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: 17 }}>
+        Guardian<span style={{ color: "#C1121F" }}>·</span>DriverOS
+      </div>
+      <button onClick={() => setOnline((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "1px solid #232833", borderRadius: 20, padding: "6px 12px", cursor: "pointer", color: online ? "#5FA777" : "#8A8F98", fontSize: 13, fontWeight: 600 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: online ? "#1B7F4B" : "#8A8F98" }} />
+        {online ? "Online" : "Offline"}
+      </button>
+    </div>
+  );
+}
+function Row({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", fontSize: 14 }}>
+      <span style={{ color: "#6B7280" }}>{label}</span>
+      <span style={{ fontWeight: 600, fontFamily: "ui-monospace, monospace", fontSize: 13, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+function Foot() {
+  return <div style={{ padding: "14px 20px", textAlign: "center", fontSize: 11, color: "#4B515C", fontFamily: "ui-monospace, monospace" }}>Prototyp · In-Memory · Nicht für echten Einsatz</div>;
+}

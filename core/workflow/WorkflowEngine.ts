@@ -161,6 +161,31 @@ type StepExecutorFn = (
   stepInput?: Record<string, unknown>
 ) => Promise<StepExecutionResult>;
 
+/**
+ * CapabilityProbe (ADR-006): a step declares `requires: Capability[]` as a
+ * build-time contract. At runtime the platform probes whether those
+ * capabilities are ACTUALLY available on this device/context (e.g. NETWORK
+ * when OFFLINE, OCR when no engine is installed). Missing → the declared
+ * fallback (Offline First), never a crash deep inside an executor.
+ *
+ * Optional: when no probe is wired the engine assumes everything is available
+ * (unchanged behaviour for tests/bootstrap).
+ */
+export interface CapabilityProbe {
+  isAvailable(cap: Capability, ctx: SituationContext): boolean;
+}
+
+/** Thrown before an executor runs when a required capability is unavailable. */
+export class CapabilityUnavailableError extends Error {
+  constructor(
+    readonly stepId: StepId,
+    readonly missing: Capability[]
+  ) {
+    super(`Step "${stepId}" requires unavailable capabilities: ${missing.join(", ")}`);
+    this.name = "CapabilityUnavailableError";
+  }
+}
+
 export class WorkflowEngine implements IWorkflowPort {
   // §8.3 OCP fix: dispatch by registry, not switch(kind). Adding a StepKind
   // means registering an executor (registerExecutor) — never editing executeStep.
@@ -172,9 +197,19 @@ export class WorkflowEngine implements IWorkflowPort {
     private context: IContextPort,
     private decision: IDecisionPort,
     private ai: IAIPort,
-    private incidentStore?: IncidentStore
+    private incidentStore?: IncidentStore,
+    private capabilities?: CapabilityProbe
   ) {
     this.registerDefaultExecutors();
+  }
+
+  /**
+   * ADR-006 runtime check. Returns the capabilities a step declares but that
+   * are not available in the current context. Empty when no probe is wired.
+   */
+  private missingCapabilities(stepDef: StepDefinition, instance: WorkflowInstance): Capability[] {
+    if (!this.capabilities) return [];
+    return stepDef.requires.filter((c) => !this.capabilities!.isAvailable(c, instance.contextSnapshot));
   }
 
   /** Register (or override) an executor for a StepKind. Throws on duplicate. */
@@ -192,6 +227,7 @@ export class WorkflowEngine implements IWorkflowPort {
     this.executors.set(StepKind.EMERGENCY_CARD, (s, i, k) => this.executeEmergencyCard(s, i, k));
     this.executors.set(StepKind.CAPTURE_PHOTO, (s, i, _k, inp) => this.executeCapturePhoto(s, i, inp));
     this.executors.set(StepKind.TRANSLATE, (s, i, k, inp) => this.executeTranslate(s, i, k, inp));
+    this.executors.set(StepKind.OCR, (s, i, k, inp) => this.executeOCR(s, i, k, inp));
     this.executors.set(StepKind.GENERATE_REPORT, (s, i) => this.executeGenerateReport(s, i));
     this.executors.set(StepKind.DECISION_POINT, (s, i, _k, inp) => this.executeDecisionPoint(s, i, inp));
   }
@@ -304,6 +340,15 @@ export class WorkflowEngine implements IWorkflowPort {
     const knowledgeUsedInStep: Array<{ versionId: VersionId; trustLevel: TrustLevel }> = [];
 
     try {
+      // ADR-006: probe declared capabilities BEFORE running the executor. A
+      // missing capability throws here so it flows into the same fallback
+      // chain as any other step failure (Offline First) — e.g. an OCR step
+      // with no OCR engine falls back to CAPTURE_PHOTO instead of crashing.
+      const missing = this.missingCapabilities(stepDef, instance);
+      if (missing.length > 0) {
+        throw new CapabilityUnavailableError(stepDef.id, missing);
+      }
+
       // §8.3 OCP: dispatch via the executor registry, not a switch(kind).
       const exec = this.executors.get(stepDef.kind);
       if (!exec) {
@@ -666,6 +711,63 @@ export class WorkflowEngine implements IWorkflowPort {
         trustLevel: aiResponse.trustLevel
       }
     };
+  }
+
+  /**
+   * OCR a captured document. Routed through the AI port (OCR is an AI Engine
+   * responsibility) — so its output is T3_AI_ASSISTED at best, NEVER promoted
+   * to verified knowledge (Trust Ladder, ADR-003). Extracted text is stashed
+   * in instance.data.ocrText for downstream steps (report, AI_ASSIST).
+   * Requires Capability.OCR — probed before this runs (ADR-006); offline it
+   * falls back via the declared fallback step.
+   */
+  private async executeOCR(
+    stepDef: StepDefinition,
+    instance: WorkflowInstance,
+    knowledgeUsed: Array<{ versionId: VersionId; trustLevel: TrustLevel }>,
+    stepInput?: Record<string, unknown>
+  ): Promise<StepExecutionResult> {
+    const image = (stepInput?.photo as string | undefined) ?? this.lastCapturedPhoto(instance);
+    if (!image) {
+      throw new Error(
+        `OCR step "${stepDef.id}" has no image (no stepInput.photo and no prior CAPTURE_PHOTO attachment)`
+      );
+    }
+
+    const aiResponse = await this.ai.assist({
+      prompt: image,
+      context: instance.contextSnapshot,
+      knowledgeContext: [],
+      stepKind: StepKind.OCR,
+      modelHint: "haiku"
+    });
+
+    if (aiResponse.sourcesUsed) {
+      for (const versionId of aiResponse.sourcesUsed) {
+        knowledgeUsed.push({ versionId, trustLevel: aiResponse.trustLevel });
+      }
+    }
+
+    instance.data = { ...instance.data, ocrText: aiResponse.content };
+
+    return {
+      stepId: stepDef.id,
+      kind: stepDef.kind,
+      uiPrompt: {
+        title: "OCR",
+        content: aiResponse.content,
+        trustLevel: aiResponse.trustLevel
+      }
+    };
+  }
+
+  /** Most recent image attachment produced by a CAPTURE_PHOTO step, if any. */
+  private lastCapturedPhoto(instance: WorkflowInstance): string | undefined {
+    for (let i = instance.history.length - 1; i >= 0; i--) {
+      const att = instance.history[i].result?.attachment;
+      if (att && att.type.startsWith("image/")) return att.data;
+    }
+    return undefined;
   }
 
   /**

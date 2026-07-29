@@ -535,6 +535,146 @@ describe("WorkflowEngine (integration)", () => {
     expect((await workflow.getWorkflowInstance(no.id))?.currentStepId).toBe(createStepId("step_statement"));
   });
 
+  // ==========================================================================
+  // OCR EXECUTOR (2.1) — AI-routed, never verified knowledge (Trust Ladder)
+  // ==========================================================================
+
+  it("OCR extracts text via the AI port, stashes it, and marks it AI-assisted (never verified)", async () => {
+    const def: WorkflowDefinition = {
+      id: createWorkflowDefId("OCR_TEST"),
+      name: "OCR",
+      version: "1.0.0",
+      offlineCapable: false,
+      entryStepId: createStepId("step_photo"),
+      steps: [
+        {
+          id: createStepId("step_photo"),
+          kind: StepKind.CAPTURE_PHOTO,
+          title: "Photo",
+          requires: [Capability.CAMERA],
+          next: createStepId("step_ocr")
+        },
+        {
+          id: createStepId("step_ocr"),
+          kind: StepKind.OCR,
+          title: "OCR",
+          requires: [Capability.OCR],
+          next: undefined
+        }
+      ]
+    };
+    workflowStorage.seedDefinition(def);
+
+    const instance = await workflow.startWorkflow({
+      userId,
+      defId: def.id,
+      location: { latitude: 52.52, longitude: 13.405 },
+      language: "de"
+    });
+
+    // Capture a photo first — OCR reads the last image attachment from history.
+    await workflow.executeStep(instance.id, { photo: "base64-doc" });
+
+    jest.spyOn(ai, "assist").mockResolvedValueOnce({
+      content: "Bußgeldbescheid: 60 EUR",
+      trustLevel: TrustLevel.T3_AI_ASSISTED,
+      sourcesUsed: []
+    });
+
+    const ocrResult = await workflow.executeStep(instance.id);
+    expect(ocrResult.uiPrompt?.content).toBe("Bußgeldbescheid: 60 EUR");
+    expect(ocrResult.uiPrompt?.trustLevel).toBe(TrustLevel.T3_AI_ASSISTED);
+  });
+
+  it("OCR without any image throws (no photo input, no prior CAPTURE_PHOTO)", async () => {
+    const def: WorkflowDefinition = {
+      id: createWorkflowDefId("OCR_NOIMG_TEST"),
+      name: "OCR-noimg",
+      version: "1.0.0",
+      offlineCapable: false,
+      entryStepId: createStepId("step_ocr"),
+      steps: [
+        {
+          id: createStepId("step_ocr"),
+          kind: StepKind.OCR,
+          title: "OCR",
+          requires: [],
+          next: undefined
+        }
+      ]
+    };
+    workflowStorage.seedDefinition(def);
+
+    const instance = await workflow.startWorkflow({ userId, defId: def.id });
+    await expect(workflow.executeStep(instance.id)).rejects.toThrow(/no image/i);
+  });
+
+  // ==========================================================================
+  // CAPABILITY PROBE (ADR-006) — missing capability routes to fallback
+  // ==========================================================================
+
+  it("routes to the declared fallback when a required capability is unavailable (ADR-006)", async () => {
+    // Probe: everything available EXCEPT OCR (e.g. no OCR engine on device).
+    const probe = {
+      isAvailable: (cap: Capability) => cap !== Capability.OCR
+    };
+    const probed = new WorkflowEngine(
+      workflowStorage as any, knowledge, context, decision, ai, undefined, probe
+    );
+
+    const def: WorkflowDefinition = {
+      id: createWorkflowDefId("CAP_TEST"),
+      name: "Cap",
+      version: "1.0.0",
+      offlineCapable: true,
+      entryStepId: createStepId("step_ocr"),
+      steps: [
+        {
+          id: createStepId("step_ocr"),
+          kind: StepKind.OCR,
+          title: "OCR",
+          requires: [Capability.OCR],
+          fallback: createStepId("step_manual"),
+          next: undefined
+        },
+        {
+          id: createStepId("step_manual"),
+          kind: StepKind.COLLECT_INPUT,
+          title: "Manual entry",
+          requires: [],
+          next: undefined
+        }
+      ]
+    };
+    workflowStorage.seedDefinition(def);
+
+    const instance = await probed.startWorkflow({
+      userId,
+      defId: def.id,
+      location: { latitude: 52.52, longitude: 13.405 },
+      language: "de"
+    });
+
+    // OCR capability missing → engine must NOT call the executor, and must land
+    // on the declared fallback (manual entry) instead of crashing.
+    await probed.executeStep(instance.id);
+    const after = await probed.getWorkflowInstance(instance.id);
+    expect(after?.currentStepId).toBe(createStepId("step_manual"));
+  });
+
+  it("with all capabilities available the probe is transparent (step runs normally)", async () => {
+    const probe = { isAvailable: () => true };
+    const probed = new WorkflowEngine(
+      workflowStorage as any, knowledge, context, decision, ai, undefined, probe
+    );
+
+    const def = buildTestWorkflow(true);
+    workflowStorage.seedDefinition(def);
+    const instance = await probed.startWorkflow({ userId, defId: def.id });
+    const result = await probed.executeStep(instance.id); // EMERGENCY_CARD, requires []
+    expect(result.uiPrompt?.title).toBe("POLICE_STOP");
+  });
+
   it("seals an immutable Evidence Incident when an IncidentStore is wired", async () => {
     const { InMemoryIncidentStore } = await import("../../incident/InMemoryIncidentStore");
     const store = new InMemoryIncidentStore();

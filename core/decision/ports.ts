@@ -1,5 +1,5 @@
 // AUTO-SPLIT z core/index.ports.ts — porty per kontekst (spec §8.3 / ADR fix).
-import { CountryCode, TrustLevel, WorkflowDefId } from "../../shared/types";
+import { CountryCode, TrustLevel, WorkflowDefId, RuleId, SemVer } from "../../shared/types";
 
 /**
  * Deterministic rule engine.
@@ -29,10 +29,14 @@ export interface DecisionInput {
 export interface DecisionOutcome {
   /** Workflow to execute (e.g., "Inspection_DE") */
   workflowDefId?: WorkflowDefId;
-  
+
   /** If no workflow, specify trust level for fallback */
   fallbackTrustLevel?: TrustLevel;
-  
+
   /** Human-readable explanation for debugging */
   reasoning?: string;
+
+  /** Which rule matched (for DecisionRecord audit, ADR-007). Absent on T4 fallback. */
+  matchedRuleId?: RuleId;
+  matchedRuleVersion?: SemVer;
 }

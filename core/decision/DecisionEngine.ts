@@ -80,7 +80,9 @@ export class DecisionEngine implements IDecisionPort {
           return {
             workflowDefId: rule.outcome.workflowDefId,
             fallbackTrustLevel: rule.outcome.fallbackTrustLevel,
-            reasoning: rule.outcome.reasoning
+            reasoning: rule.outcome.reasoning,
+            matchedRuleId: rule.id,
+            matchedRuleVersion: rule.version
           };
         }
       }

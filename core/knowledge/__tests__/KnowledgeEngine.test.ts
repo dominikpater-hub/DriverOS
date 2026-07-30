@@ -219,4 +219,23 @@ describe("KnowledgeEngine + KnowledgePublisher", () => {
     const card = await engine.getEmergencyCard("FR", "fr");
     expect(card).toBeNull();
   });
+
+  // D-02: the card's content is on the versioning spine, so the exact version
+  // shown is evidentiary and resolvable for an Incident audit.
+  it("emergency card carries a resolvable KnowledgeVersion (evidentiary, D-02)", async () => {
+    await publisher.publishEmergencyCard("DE", {
+      type: "POLICE_STOP",
+      content: baseContent,
+      contacts: [{ type: "EMERGENCY", name: "Polizei/Rettung", number: "112", language: "de" }]
+    });
+
+    const card = await engine.getEmergencyCard("DE", "de");
+    expect(card?.versionId).toBeDefined();
+    expect(card?.trustLevel).toBe(TrustLevel.T1_VERIFIED);
+
+    // The version the Incident would reference resolves to the same content.
+    const version = await engine.getKnowledgeVersion(card!.versionId);
+    expect(version).not.toBeNull();
+    expect(version?.content.summary).toBe(baseContent.summary);
+  });
 });

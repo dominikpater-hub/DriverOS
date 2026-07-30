@@ -626,9 +626,11 @@ export class WorkflowEngine implements IWorkflowPort {
       };
     }
 
+    // D-02: record the exact emergency-card VERSION shown (evidentiary),
+    // resolvable later via getKnowledgeVersion() — not the card id.
     knowledgeUsed.push({
-      versionId: card.id as any,
-      trustLevel: TrustLevel.T1_VERIFIED
+      versionId: card.versionId,
+      trustLevel: card.trustLevel
     });
 
     return {

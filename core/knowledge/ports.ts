@@ -72,6 +72,10 @@ export interface EmergencyCardSnapshot {
   content: StructuredContent;
   contacts: EmergencyContact[];
   tier: "TIER_0";
+  /** D-02: the exact immutable version shown, for the Incident audit trail. */
+  versionId: VersionId;
+  /** Emergency cards are TIER_0 verified content. */
+  trustLevel: TrustLevel;
 }
 
 export interface EmergencyContact {

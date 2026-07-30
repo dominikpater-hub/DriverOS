@@ -87,6 +87,14 @@ export interface EmergencyCard {
   contacts: EmergencyContact[];
   lastUpdated: Date;
   checksum: string;
+  /**
+   * D-02: the card's content is also published as an immutable KnowledgeVersion
+   * on the shared versioning spine, so an Incident can record the EXACT version
+   * of the emergency card that was shown (evidentiary history) and audits can
+   * resolve it via getKnowledgeVersion(). Optional so pre-versioning rows
+   * (e.g. loaded from a Postgres table without the column) degrade gracefully.
+   */
+  currentVersionId?: VersionId;
 }
 
 // ============================================================================
@@ -187,7 +195,11 @@ export class KnowledgeEngine implements IKnowledgePort {
       type: card.type,
       content: card.content,
       contacts: card.contacts,
-      tier: "TIER_0"
+      tier: "TIER_0",
+      // D-02: the versioned, evidentiary reference. Falls back to the card id
+      // for pre-versioning rows so the snapshot always carries a version.
+      versionId: card.currentVersionId ?? (card.id as unknown as VersionId),
+      trustLevel: TrustLevel.T1_VERIFIED
     };
   }
 
@@ -362,6 +374,33 @@ export class KnowledgePublisher {
   ): Promise<CardId> {
     const cardId = this.generateCardId();
 
+    // D-02: put the card's content on the shared versioning spine. This
+    // immutable KnowledgeVersion is what an Incident references (evidentiary),
+    // and what getKnowledgeVersion() resolves for an audit. Emergency cards are
+    // TIER_0 verified content by definition, so we stamp an official source and
+    // OFFICIAL confidence (the same invariant publishVersion enforces —
+    // "knowledge without metadata doesn't exist").
+    const versionId = this.generateVersionId();
+    const cardVersion: KnowledgeVersion = {
+      id: versionId,
+      entryId: createKnowledgeId(`EMERGENCY-${country}-${input.type}`),
+      // Cards are not language-filtered in storage (getEmergencyCard ignores
+      // language); this label is only for audit resolution. Default to "de"
+      // until per-language emergency cards land.
+      language: "de" as LanguageCode,
+      content: input.content,
+      sources: [{ type: "OFFICIAL_SITE", reference: `EMERGENCY_TIER_0:${country}:${input.type}`, retrievedAt: new Date() }],
+      confidence: ConfidenceLevel.OFFICIAL,
+      effectiveDate: new Date(),
+      validUntil: null,
+      verifiedAt: new Date(),
+      verifiedBy: "system@guardian",
+      nextReviewDue: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      supersededBy: null,
+      checksum: this.computeChecksum(input.content)
+    };
+    await this.storage.saveVersion(cardVersion);
+
     const card: EmergencyCard = {
       id: cardId,
       country,
@@ -369,7 +408,8 @@ export class KnowledgePublisher {
       content: input.content,
       contacts: input.contacts,
       lastUpdated: new Date(),
-      checksum: this.computeChecksum(input.content)
+      checksum: cardVersion.checksum,
+      currentVersionId: versionId
     };
 
     await this.storage.saveEmergencyCard(card);

@@ -29,6 +29,7 @@ import {
 import { WorkflowEngine } from "../../../core/workflow/WorkflowEngine";
 import { InMemoryWorkflowStorage } from "../../../core/workflow/storage/InMemoryWorkflowStorage";
 import { AIEngine, ClaudeAPIProvider } from "../../../core/ai/AIEngine";
+import { ConnectivityCapabilityProbe } from "../../../core/offline/ConnectivityCapabilityProbe";
 
 import { InspectionDE } from "../../../apps/driver-os/workflows/InspectionDE";
 import { ADRCheckDE } from "../../../apps/driver-os/workflows/ADRCheckDE";
@@ -187,7 +188,13 @@ export async function createDriverOSRuntime(): Promise<DriverOSRuntime> {
   const workflowStorage = new InMemoryWorkflowStorage();
   workflowStorage.seedDefinition(InspectionDE);
   workflowStorage.seedDefinition(ADRCheckDE);
-  const workflow = new WorkflowEngine(workflowStorage as any, knowledge, context, decision, ai);
+  // M3 Offline First: network-bound capabilities are unavailable offline, so a
+  // step needing NETWORK/AI/TRANSLATION offline routes to its declared fallback.
+  const workflow = new WorkflowEngine(
+    workflowStorage as any, knowledge, context, decision, ai,
+    undefined,
+    new ConnectivityCapabilityProbe()
+  );
 
   return {
     workflow,

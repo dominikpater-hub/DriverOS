@@ -443,29 +443,107 @@ export class KnowledgePublisher {
  * Builds offline packages for TIER_0 (emergency), TIER_1 (country), TIER_2 (region)
  * Snapshots current versions + integrity checksums
  */
+export interface OfflinePackage {
+  tier: "TIER_0" | "TIER_1" | "TIER_2";
+  country?: CountryCode;
+  language: LanguageCode;
+  versions: VersionId[];
+  /** Content-derived integrity hash — changes iff included content changes. */
+  checksum: string;
+}
+
 export class OfflinePackageBuilder {
   constructor(private engine: KnowledgeEngine, private storage: IKnowledgeStorage) {}
 
-  async buildTier0Package(language: LanguageCode): Promise<{ versions: VersionId[]; checksum: string }> {
-    // All emergency cards + universal rights
-    const versions: VersionId[] = [];
-    // Implementation: fetch all EMERGENCY domain entries
-    const checksum = this.computePackageChecksum(versions);
-    return { versions, checksum };
+  /**
+   * TIER_0 — the always-available safety net: the country's emergency card
+   * (baked, offline) plus any EMERGENCY-domain knowledge in the language.
+   * This is the package that MUST be present for the offline-first invariant.
+   */
+  async buildTier0Package(country: CountryCode, language: LanguageCode): Promise<OfflinePackage> {
+    const parts: Array<{ id: VersionId; checksum: string }> = [];
+
+    const card = await this.storage.getEmergencyCard(country);
+    if (card?.currentVersionId) {
+      parts.push({ id: card.currentVersionId, checksum: card.checksum });
+    }
+
+    const emergencyEntries = await this.storage.searchEntries({ domain: "EMERGENCY" } as Partial<KnowledgeEntry>);
+    for (const entry of emergencyEntries) {
+      const v = await this.storage.getVersion(entry.currentVersionId);
+      if (v && v.language === language) parts.push({ id: v.id, checksum: v.checksum });
+    }
+
+    return this.assemble("TIER_0", country, language, parts);
   }
 
-  async buildTier1Package(
+  /**
+   * TIER_1 — everything published for a country in a language. The offline
+   * package a driver downloads before crossing into that country.
+   */
+  async buildTier1Package(country: CountryCode, language: LanguageCode): Promise<OfflinePackage> {
+    const parts = await this.collectByScope(country, language, ["NATIONAL", "EU"]);
+    return this.assemble("TIER_1", country, language, parts);
+  }
+
+  /**
+   * TIER_2 — regional detail on top of TIER_1 (REGIONAL-scope entries).
+   */
+  async buildTier2Package(country: CountryCode, language: LanguageCode): Promise<OfflinePackage> {
+    const parts = await this.collectByScope(country, language, ["REGIONAL"]);
+    return this.assemble("TIER_2", country, language, parts);
+  }
+
+  private async collectByScope(
     country: CountryCode,
-    language: LanguageCode
-  ): Promise<{ versions: VersionId[]; checksum: string }> {
-    // Critical workflows + knowledge for country
-    const versions: VersionId[] = [];
-    // Implementation: fetch all entries for country
-    const checksum = this.computePackageChecksum(versions);
-    return { versions, checksum };
+    language: LanguageCode,
+    scopes: KnowledgeEntry["scope"][]
+  ): Promise<Array<{ id: VersionId; checksum: string }>> {
+    const entries = await this.storage.searchEntries({ country } as Partial<KnowledgeEntry>);
+    const parts: Array<{ id: VersionId; checksum: string }> = [];
+    for (const entry of entries) {
+      if (!scopes.includes(entry.scope)) continue;
+      const v = await this.storage.getVersion(entry.currentVersionId);
+      if (v && v.language === language) parts.push({ id: v.id, checksum: v.checksum });
+    }
+    return parts;
   }
 
-  private computePackageChecksum(versions: VersionId[]): string {
-    return `pkg:${versions.join("|").substring(0, 32)}`;
+  private assemble(
+    tier: OfflinePackage["tier"],
+    country: CountryCode,
+    language: LanguageCode,
+    parts: Array<{ id: VersionId; checksum: string }>
+  ): OfflinePackage {
+    // Deterministic: sort by version id so the same content always yields the
+    // same package + checksum regardless of enumeration order (dedup too).
+    const byId = new Map(parts.map((p) => [String(p.id), p]));
+    const sorted = [...byId.values()].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    return {
+      tier,
+      country,
+      language,
+      versions: sorted.map((p) => p.id),
+      checksum: this.computePackageChecksum(sorted)
+    };
+  }
+
+  /**
+   * Integrity hash over each included version's own content checksum, so any
+   * change to included knowledge changes the package checksum (tamper/staleness
+   * detection at install time).
+   */
+  private computePackageChecksum(parts: Array<{ id: VersionId; checksum: string }>): string {
+    // Full-material FNV-1a hash (pure JS, browser-safe — no node crypto). Every
+    // included version's id AND its content checksum feed the hash, so any
+    // change to included content changes the package hash. Not cryptographic;
+    // this is install-time integrity/staleness detection, not tamper-proofing.
+    const material = parts.map((p) => `${String(p.id)}@${p.checksum}`).join("|");
+    let h = 0x811c9dc5;
+    for (let i = 0; i < material.length; i++) {
+      h ^= material.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return `pkg:fnv1a:${h.toString(16).padStart(8, "0")}`;
   }
 }

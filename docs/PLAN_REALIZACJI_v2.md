@@ -93,6 +93,11 @@ Ten plan zastępuje v1 tam, gdzie się różni. Największa zmiana vs v1: **UI (
 ### Tor A — Offline-first (M3)
 IndexedDB storage (klient) + Postgres dla Decision/Workflow + `OfflinePackageBuilder` (TIER_0/1/2, checksumy) + delta-sync + `WorkflowPackageBuilder`. Test „krytyczny workflow działa w pełni offline" (wymuś `CapabilityProbe→UNAVAILABLE(NETWORK)`, asertuj dokładny `fallbackStepId`). **To najsztandarowsza niezbudowana zasada.**
 
+**✅ M3 (rdzeń) zrobiony:**
+- **Flagowy inwariant offline ZBUDOWANY i EGZEKWOWANY:** `ConnectivityCapabilityProbe` (`core/offline/`) — capability zależne od sieci (NETWORK/AI/TRANSLATION/OCR/MAPS) są NIEDOSTĘPNE offline; krok ich wymagający jest routowany do DOKŁADNEGO deklarowanego fallbacku (test asertuje `fallbackStepId`). Bez fallbacku — głośny błąd, nie ciche pominięcie. Wpięte w composition root (realna apka też to ma).
+- **`OfflinePackageBuilder`** dokończony: TIER_0 (karta ratunkowa + wiedza EMERGENCY), TIER_1 (NATIONAL/EU danego kraju), TIER_2 (REGIONAL). Checksum **deterministyczny, po treści** (FNV-1a nad id+checksum każdej wersji, browser-safe) → zmiana treści zmienia checksum paczki (wykrywanie nieaktualności/integralności przy instalacji). +7 testów (174 łącznie).
+- **Zostaje (runtime-specyficzne, osobno):** IndexedDB (klient), Postgres dla Decision/Workflow, delta-sync — wymagają realnych adapterów storage/DB, nietestowalne w czystym Jest bez środowiska; wzorzec portów już na to gotowy.
+
 ### Tor B — AI produkcyjne (M4)
 `ResponseValidator` 100% (cited⊆allowed, brak zmyślonych sygnatur) → testy kontraktowe na mocku zgodnym z kontraktem → realny `ClaudeAPIProvider` za istniejącym proxy (klucz tylko w backendzie) → routing modelu + budżety. **Wdrożenie proxy jako funkcja serverless na Vercelu = pierwszy użyteczny deploy** (zastępuje placeholder po stronie API).
 

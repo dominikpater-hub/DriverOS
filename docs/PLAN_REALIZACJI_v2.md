@@ -106,6 +106,11 @@ IndexedDB storage (klient) + Postgres dla Decision/Workflow + `OfflinePackageBui
 ### Tor C — Weryfikacja treści prawnej (proces)
 Żadna treść (PL/DE) nie idzie do kierowcy bez ludzkiej weryfikacji prawnej. Bramka `knowledge:publish` odmawia bez `source`+`verifiedBy`. Gate przed launchem.
 
+### M6 (launch) — postęp
+- **✅ CI:** `.github/workflows/verify.yml` — `npm run verify` (type-check + Jest + arch-gate) + build UI na każdy push/PR do `main`. **Do zrobienia przez Ciebie:** ustawić to jako *required status check* w branch protection (GitHub → Settings → Branches).
+- **✅ GDPR (Privacy by Design, rdzeń):** anonimizacja Incidentu (`anonymizeIncident` — strip PII z metadanych, zachowanie hasha integralności) + minimalizacja danych w modelu Evidence; wejście do pętli retencji §8. Pełna polityka retencji/erasure = proces + backend.
+- **Zostaje:** weryfikacja treści prawnej (proces, Tor C), realny deploy (blokuje config panelu Vercela), realny provider AI (klucz/proxy).
+
 ---
 
 ## 5. Deploy (Vercel) — ścieżka od placeholdera do produktu

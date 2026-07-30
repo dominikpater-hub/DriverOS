@@ -1,0 +1,36 @@
+# Guardian Engine — CI gate (M6 hygiene).
+#
+# Domain Model / Engineering Handbook: boundaries and the Trust Ladder are only
+# real if the build enforces them. This runs the SAME gate as `npm run verify`
+# on every push and PR to main — type-check (0 errors), the full Jest suite, and
+# the dependency-cruiser architecture rules — plus a production build of the
+# DriverOS UI. Make this a REQUIRED status check in branch protection so main
+# stays green (Vercel auto-deploys from a green main).
+
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install (workspaces)
+        run: npm install
+
+      - name: Verify (type-check + tests + arch gate)
+        run: npm run verify
+
+      - name: Build DriverOS UI (production)
+        run: npm run build --workspace @guardian-engine/driver-os-ui

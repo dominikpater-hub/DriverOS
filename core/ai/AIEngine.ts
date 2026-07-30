@@ -25,6 +25,7 @@ import {
 
 } from "./ports";
 import { KnowledgeVersionSnapshot } from "../../shared/snapshots";
+import { ResponseValidator } from "./ResponseValidator";
 
 // ============================================================================
 // MODEL ROUTER — Cost optimization
@@ -105,7 +106,12 @@ export interface ILLMProvider {
 // ============================================================================
 
 export class AIEngine implements IAIPort {
-  constructor(private llmProvider: ILLMProvider) {}
+  constructor(
+    private llmProvider: ILLMProvider,
+    // M4: every response passes this gate before it can be T3. Injectable for
+    // tests; defaults to the standard validator.
+    private validator: ResponseValidator = new ResponseValidator()
+  ) {}
 
   /**
    * Assist with task
@@ -153,11 +159,28 @@ export class AIEngine implements IAIPort {
       // Extract sources that were referenced
       const sourcesUsed = this.extractReferencedSources(response.text, request.knowledgeContext);
 
+      // M4 / TRUST-1: gate the answer. A response that cites sources outside the
+      // provided grounding, or that invents a legal signature, must NOT ship as
+      // T3 — it degrades to the safe T4 fallback. Only validated sources are
+      // attributed.
+      const verdict = this.validator.validate({
+        responseText: response.text,
+        allowedKnowledge: request.knowledgeContext,
+        citedSources: sourcesUsed
+      });
+
+      if (!verdict.valid) {
+        console.warn(
+          `[AIEngine] Response failed validation, degrading to T4: ${verdict.reasons.join("; ")}`
+        );
+        return this.fallbackResponse(request);
+      }
+
       return {
         content: response.text,
         trustLevel: TrustLevel.T3_AI_ASSISTED,
         usage: response.usage,
-        sourcesUsed
+        sourcesUsed: verdict.validatedSources
       };
     } catch (error) {
       console.error("[AIEngine] LLM call failed:", error);

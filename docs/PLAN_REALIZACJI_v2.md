@@ -96,6 +96,8 @@ IndexedDB storage (klient) + Postgres dla Decision/Workflow + `OfflinePackageBui
 ### Tor B — AI produkcyjne (M4)
 `ResponseValidator` 100% (cited⊆allowed, brak zmyślonych sygnatur) → testy kontraktowe na mocku zgodnym z kontraktem → realny `ClaudeAPIProvider` za istniejącym proxy (klucz tylko w backendzie) → routing modelu + budżety. **Wdrożenie proxy jako funkcja serverless na Vercelu = pierwszy użyteczny deploy** (zastępuje placeholder po stronie API).
 
+**✅ M4 (rdzeń) zrobiony:** `core/ai/ResponseValidator.ts` — bramka, przez którą przechodzi KAŻDA odpowiedź AI zanim może być T3. Dwa inwarianty: **cited ⊆ allowed** (źródła cytowane muszą być podzbiorem dostarczonego groundingu) i **brak zmyślonych sygnatur prawnych** (każdy §/Art./„ADR Kapitel x.y" w odpowiedzi musi występować w zweryfikowanym źródle — inaczej fabrykacja). Wpięty w `AIEngine.assist`: odpowiedź niezwalidowana **degraduje do T4** (nie pokazujemy zmyślonego prawa kierowcy), `sourcesUsed` = tylko zwalidowany podzbiór. Deterministyczny, zero-AI. +8 testów kontraktowych (167 łącznie). **Zostaje (infra, nie kod):** realny provider za proxy — podmiana jednej linii w composition roocie (`ClaudeAPIProvider` mock → realny), plus deploy proxy jako serverless; wymaga klucza/Vercela od Ciebie.
+
 ### Tor C — Weryfikacja treści prawnej (proces)
 Żadna treść (PL/DE) nie idzie do kierowcy bez ludzkiej weryfikacji prawnej. Bramka `knowledge:publish` odmawia bez `source`+`verifiedBy`. Gate przed launchem.
 

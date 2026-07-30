@@ -131,6 +131,52 @@ describe("AIEngine", () => {
     expect(provider.lastCall).not.toBeNull();
   });
 
+  // ==========================================================================
+  // M4 — ResponseValidator gate wired into the engine
+  // ==========================================================================
+
+  it("degrades a response with a FABRICATED legal signature to T4 (does not ship it as T3)", async () => {
+    // Provider returns a §-reference that is NOT in the provided knowledge.
+    const provider = new MockLLMProvider({
+      text: "Laut §99 StVO darfst du sofort wegfahren.",
+      usage: { inputTokens: 100, outputTokens: 20 }
+    });
+    const engine = new AIEngine(provider);
+
+    const response = await engine.assist({
+      prompt: "Darf ich wegfahren?",
+      context: baseContext(Connectivity.ONLINE),
+      knowledgeContext: [knowledgeSnapshot("Bleib ruhig")], // no §99 anywhere
+      stepKind: StepKind.TRANSLATE
+    });
+
+    expect(response.trustLevel).toBe(TrustLevel.T4_FALLBACK);
+    expect(response.content).not.toContain("§99");
+  });
+
+  it("keeps a validated response at T3 and attributes only allowed sources", async () => {
+    // §36 IS present in the grounding, so the answer is legitimately T3.
+    const provider = new MockLLMProvider({
+      text: "Nach §36 zeigst du deine Papiere.",
+      usage: { inputTokens: 100, outputTokens: 20 }
+    });
+    const engine = new AIEngine(provider);
+
+    const kn = knowledgeSnapshot("Bleib ruhig");
+    kn.content.legalRefs = [{ type: "LAW_TEXT", reference: "StVO §36", retrievedAt: new Date() } as any];
+
+    const response = await engine.assist({
+      prompt: "Was tun?",
+      context: baseContext(Connectivity.ONLINE),
+      knowledgeContext: [kn],
+      stepKind: StepKind.TRANSLATE
+    });
+
+    expect(response.trustLevel).toBe(TrustLevel.T3_AI_ASSISTED);
+    // sourcesUsed ⊆ allowed (the validated subset)
+    expect(response.sourcesUsed?.every((s) => String(s) === String(kn.id))).toBe(true);
+  });
+
   it("never returns T1_VERIFIED or T2_VERIFIED_STALE — those belong to Knowledge Engine only", async () => {
     const provider = new MockLLMProvider();
     const engine = new AIEngine(provider);
